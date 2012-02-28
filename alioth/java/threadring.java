@@ -7,9 +7,11 @@
 package alioth.java;
 
 import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.Exchanger;
 
 public class threadring {
   static final int THREAD_COUNT = 503;
+  static final Exchanger outputPipe = new Exchanger();
 
   public static class MessageThread extends Thread {
     MessageThread nextThread;
@@ -26,8 +28,8 @@ public class threadring {
 
     public void enqueue(Integer hopsRemaining) {
       if(hopsRemaining == 0){
-        System.out.println(getName());
-        System.exit(0);
+        try { outputPipe.exchange(Integer.decode(getName())); }
+        catch (Exception ignore) { return; }
       }
       // as only one message populates the ring, it's impossible
       // that queue is not empty
@@ -45,7 +47,7 @@ public class threadring {
     }
   }
 
-  public static void run(int hopCount) throws Exception {
+  public static int run(int hopCount) throws Exception {
     MessageThread first = null;
     MessageThread last = null;
     for (int i = THREAD_COUNT; i >= 1 ; i--) {
@@ -63,11 +65,20 @@ public class threadring {
     }while(t != first);
     // inject message
     first.enqueue(hopCount);
-    first.join(); // wait for System.exit
+    int ret = ((Integer)outputPipe.exchange(null)).intValue();
+
+    // shutdown threads
+    t = first;
+    do{
+      t.stop(); // yea yea ..
+      t = t.nextThread;
+    }while(t != first);
+
+    return ret;
   }
 
   public static void main(String args[]) throws Exception {
     int hopCount = Integer.parseInt(args[0]);
-    run(hopCount);
+    System.out.println(run(hopCount));
   }
 }
